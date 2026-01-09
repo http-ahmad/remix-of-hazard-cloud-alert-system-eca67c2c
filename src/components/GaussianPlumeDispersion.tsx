@@ -23,7 +23,10 @@ interface PlumeParameters {
   releaseRate: number; // kg/hr
   releaseTime: string;
   windSpeed: number; // m/s
-  windDirection: number; // degrees
+  windDirection: number; // degrees (0=N, 90=E, meteorological convention)
+  releaseHeight: number; // meters
+  releaseTemperature: number; // °C
+  relativeHumidity: number; // %
   mapType: 'street' | 'satellite' | 'terrain';
 }
 
@@ -46,7 +49,10 @@ const GaussianPlumeDispersion: React.FC = () => {
     releaseRate: 100,
     releaseTime: new Date().toISOString().slice(0, 16),
     windSpeed: 5,
-    windDirection: 90,
+    windDirection: 0, // 0° = North (wind from North, plume goes South)
+    releaseHeight: 10,
+    releaseTemperature: 20,
+    relativeHumidity: 50,
     mapType: 'street'
   });
 
@@ -113,21 +119,35 @@ const GaussianPlumeDispersion: React.FC = () => {
   const generatePlumePolygon = (
     sourceLocation: { lat: number; lng: number },
     threshold: number,
-    Q: number,
-    u: number,
-    windDirection: number,
-    stability: keyof typeof stabilityClasses
+    Q: number, // emission rate in g/s
+    u: number, // wind speed in m/s
+    windDirection: number, // meteorological wind direction (degrees, 0=N, 90=E)
+    stability: keyof typeof stabilityClasses,
+    releaseHeight: number = 10 // stack height in meters
   ): LatLngExpression[] => {
     const points: LatLngExpression[] = [];
     const { alpha, beta } = stabilityClasses[stability];
     
-    // Convert wind direction to radians (meteorological to mathematical)
-    const windRad = (windDirection - 90) * Math.PI / 180;
+    // Meteorological convention: wind direction is where wind COMES FROM
+    // 0° = North (wind blows TO the south), 90° = East (wind blows TO the west)
+    // We need to convert to the direction the plume travels (opposite direction)
+    // Plume travels in the direction the wind is blowing TO
+    const plumeDirection = (windDirection + 180) % 360; // Direction plume travels
+    const windRad = (90 - plumeDirection) * Math.PI / 180; // Convert to math angle (0=East, CCW positive)
+    
+    // Effective wind speed (minimum to prevent division by zero)
+    const effectiveWindSpeed = Math.max(0.5, u);
+    
+    // Release height affects ground-level concentration
+    const H = Math.max(0, releaseHeight);
     
     // Find maximum downwind distance where concentration exceeds threshold
+    // Account for release rate properly - higher Q = longer plume
     let maxDownwindDistance = 0;
-    for (let x = 50; x <= 15000; x += 50) {
-      const concentration = calculateConcentration(x, 0, 0, Q, u, 10, stability);
+    const maxSearchDistance = Math.min(50000, 500 + Q * 100); // Scale search with Q
+    
+    for (let x = 50; x <= maxSearchDistance; x += 50) {
+      const concentration = calculateConcentration(x, 0, 0, Q, effectiveWindSpeed, H, stability);
       if (concentration >= threshold) {
         maxDownwindDistance = x;
       } else if (maxDownwindDistance > 0) {
@@ -137,7 +157,7 @@ const GaussianPlumeDispersion: React.FC = () => {
     
     if (maxDownwindDistance === 0) {
       // Return small circle if no significant plume
-      const radius = 150;
+      const radius = 100 + Q * 10; // Scale minimum size with release rate
       for (let angle = 0; angle <= 2 * Math.PI; angle += Math.PI / 24) {
         const deltaLat = (radius * Math.cos(angle)) / 111000;
         const deltaLng = (radius * Math.sin(angle)) / (111000 * Math.cos(sourceLocation.lat * Math.PI / 180));
@@ -168,7 +188,7 @@ const GaussianPlumeDispersion: React.FC = () => {
       // Refine crosswind distance to match exact threshold
       let bestCrosswind = 0;
       for (let y = 0; y <= maxCrosswind; y += maxCrosswind / 50) {
-        const concentration = calculateConcentration(x, y, 0, Q, u, 10, stability);
+        const concentration = calculateConcentration(x, y, 0, Q, effectiveWindSpeed, H, stability);
         if (concentration >= threshold) {
           bestCrosswind = y;
         }
@@ -240,7 +260,7 @@ const GaussianPlumeDispersion: React.FC = () => {
       
       const newZones: ConcentrationZone[] = [
         {
-          polygon: generatePlumePolygon(sourceLocation, thresholds.low, Q, parameters.windSpeed, parameters.windDirection, stability),
+          polygon: generatePlumePolygon(sourceLocation, thresholds.low, Q, parameters.windSpeed, parameters.windDirection, stability, parameters.releaseHeight),
           color: '#eab308',
           fillColor: '#fef3c7',
           fillOpacity: 0.4,
@@ -250,7 +270,7 @@ const GaussianPlumeDispersion: React.FC = () => {
           threshold: 'Low Risk - Enhanced Monitoring'
         },
         {
-          polygon: generatePlumePolygon(sourceLocation, thresholds.moderate, Q, parameters.windSpeed, parameters.windDirection, stability),
+          polygon: generatePlumePolygon(sourceLocation, thresholds.moderate, Q, parameters.windSpeed, parameters.windDirection, stability, parameters.releaseHeight),
           color: '#ea580c',
           fillColor: '#fed7aa',
           fillOpacity: 0.5,
@@ -260,7 +280,7 @@ const GaussianPlumeDispersion: React.FC = () => {
           threshold: 'Moderate Risk - Shelter in Place'
         },
         {
-          polygon: generatePlumePolygon(sourceLocation, thresholds.high, Q, parameters.windSpeed, parameters.windDirection, stability),
+          polygon: generatePlumePolygon(sourceLocation, thresholds.high, Q, parameters.windSpeed, parameters.windDirection, stability, parameters.releaseHeight),
           color: '#dc2626',
           fillColor: '#fecaca',
           fillOpacity: 0.6,
@@ -376,7 +396,7 @@ const GaussianPlumeDispersion: React.FC = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="windDirection">Wind Direction (°)</Label>
+              <Label htmlFor="windDirection">Wind Direction (° from North)</Label>
               <Input
                 id="windDirection"
                 type="number"
@@ -384,6 +404,43 @@ const GaussianPlumeDispersion: React.FC = () => {
                 max="360"
                 value={parameters.windDirection}
                 onChange={(e) => setParameters(prev => ({ ...prev, windDirection: parseFloat(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-muted-foreground">0°=N, 90°=E, 180°=S, 270°=W</p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="releaseHeight">Release Height (m)</Label>
+              <Input
+                id="releaseHeight"
+                type="number"
+                min="0"
+                max="200"
+                value={parameters.releaseHeight}
+                onChange={(e) => setParameters(prev => ({ ...prev, releaseHeight: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="releaseTemperature">Release Temperature (°C)</Label>
+              <Input
+                id="releaseTemperature"
+                type="number"
+                min="-100"
+                max="1000"
+                value={parameters.releaseTemperature}
+                onChange={(e) => setParameters(prev => ({ ...prev, releaseTemperature: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="relativeHumidity">Relative Humidity (%)</Label>
+              <Input
+                id="relativeHumidity"
+                type="number"
+                min="0"
+                max="100"
+                value={parameters.relativeHumidity}
+                onChange={(e) => setParameters(prev => ({ ...prev, relativeHumidity: parseFloat(e.target.value) || 0 }))}
               />
             </div>
             

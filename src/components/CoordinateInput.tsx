@@ -56,7 +56,16 @@ const CoordinateInput = ({ onLocationChange, currentLocation }: CoordinateInputP
   };
 
   const handleGetCurrentLocation = () => {
-    if (navigator.geolocation) {
+    if (!navigator.geolocation) {
+      toast({
+        title: "Geolocation Not Supported",
+        description: "Your browser doesn't support geolocation. Please enter coordinates manually.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const attemptGeolocation = (retryCount = 0, maxRetries = 3) => {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const lat = position.coords.latitude;
@@ -70,20 +79,30 @@ const CoordinateInput = ({ onLocationChange, currentLocation }: CoordinateInputP
           });
         },
         (error) => {
+          // Retry on timeout or position unavailable errors
+          if (retryCount < maxRetries && (error.code === 2 || error.code === 3)) {
+            console.log(`Retrying geolocation... attempt ${retryCount + 2}/${maxRetries + 1}`);
+            setTimeout(() => attemptGeolocation(retryCount + 1, maxRetries), 1500);
+            return;
+          }
+          
           toast({
             title: "Location Error",
-            description: "Unable to detect current location. Please enter coordinates manually.",
+            description: error.code === 1 
+              ? "Location permission denied. Please enable location access or enter coordinates manually."
+              : "Unable to detect current location. Please try again or enter coordinates manually.",
             variant: "destructive",
           });
+        },
+        { 
+          timeout: 15000, 
+          enableHighAccuracy: false,
+          maximumAge: 300000
         }
       );
-    } else {
-      toast({
-        title: "Geolocation Not Supported",
-        description: "Your browser doesn't support geolocation. Please enter coordinates manually.",
-        variant: "destructive",
-      });
-    }
+    };
+
+    attemptGeolocation();
   };
 
   return (
