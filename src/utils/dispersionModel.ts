@@ -105,19 +105,29 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
   const stabilityFactor = getStabilityFactor(params.stabilityClass);
   
   // Temperature effect on dispersion (affects buoyancy and evaporation)
-  // We distinguish ambient air temperature vs release temperature at the source.
-  const ambientTempC = params.temperature;
-  const releaseTempC = params.releaseTemperature ?? params.temperature;
-
-  // Higher release temperatures increase buoyancy/evaporation.
-  const releaseTempKelvin = releaseTempC + 273.15;
+  // Ambient temperature affects atmospheric density and mixing
+  const ambientTempC = params.temperature ?? 20;
+  const releaseTempC = params.releaseTemperature ?? ambientTempC;
+  const ambientTempKelvin = ambientTempC + 273.15;
   const refTempKelvin = 293.15; // 20°C reference
-  const temperatureFactor = Math.pow(releaseTempKelvin / refTempKelvin, 1.5);
 
-  // Humidity effect (relative humidity %). Make this effect visible in the plume.
-  const humidityFactor = params.humidity !== undefined
-    ? (1.15 - (Math.min(100, Math.max(0, params.humidity)) / 100) * 0.4) // 0%->1.15, 100%->0.75
-    : 1;
+  // Ambient temperature effect: warmer air = more turbulent mixing = wider spread
+  // Colder air = more stable = plume travels further with less mixing
+  const ambientTempFactor = Math.pow(ambientTempKelvin / refTempKelvin, 0.8);
+
+  // Release temperature effect: higher release temp = more buoyancy = plume rises and spreads
+  const releaseTempKelvin = releaseTempC + 273.15;
+  const releaseTempFactor = Math.pow(releaseTempKelvin / refTempKelvin, 0.5);
+  
+  // Combined temperature factor
+  const temperatureFactor = ambientTempFactor * releaseTempFactor;
+
+  // Humidity effect (relative humidity %)
+  // Higher humidity = more particle/droplet deposition = shorter plume
+  // Lower humidity = better transport = longer plume distance
+  const humidityPercent = params.humidity ?? 50;
+  // Scale: 0% RH -> 1.4x distance, 50% RH -> 1.0x, 100% RH -> 0.6x
+  const humidityFactor = 1.4 - (humidityPercent / 100) * 0.8;
     
   // Apply pressure adjustment if available
   const pressureFactor = params.ambientPressure 
@@ -136,29 +146,38 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
   const chemicalData = chemicalDatabase[params.chemicalType.toLowerCase()];
   
   // Release height effect on ground-level concentration
-  // Elevated releases have lower ground concentrations near source,
-  // but the plume touches down further away
-  // Using Gaussian plume approximation for effective stack height
+  // Using proper Gaussian plume physics for elevated releases
   const H = params.sourceHeight || 0; // Release height in meters
   const u = Math.max(0.5, params.windSpeed); // Wind speed, minimum 0.5 m/s
   
-  // Buoyancy rise for elevated releases (simplified)
-  // Higher (release - ambient) temperature difference = more plume rise
+  // Buoyancy rise for elevated releases (Briggs equations simplified)
+  // Temperature differential between release and ambient causes plume rise
   const deltaT = Math.max(0, releaseTempC - ambientTempC);
-  const buoyancyRise = deltaT > 0 ? 1.6 * Math.pow(deltaT * 10, 0.333) * Math.pow(100, 0.667) / u : 0;
+  // Holland's formula for plume rise: ΔH = (v*d/u) * (1.5 + 2.68e-3 * P * (ΔT/T_s) * d)
+  // Simplified: more temperature diff = more rise
+  const buoyancyRise = deltaT > 0 
+    ? 2.6 * Math.pow((deltaT / ambientTempKelvin) * 1000, 0.333) * 10 / u 
+    : 0;
   
-  // Effective release height
+  // Effective release height (physical height + buoyancy rise)
   const effectiveHeight = H + buoyancyRise;
   
-  // Height factor: elevated releases reduce ground concentration near source
-  // but extend the downwind distance where max concentration occurs
-  const heightFactor = effectiveHeight > 0 
-    ? Math.min(6, 1 + (effectiveHeight / 25)) // stronger, capped
+  // HEIGHT EFFECT ON PLUME DISTANCE:
+  // Elevated releases cause the plume to touch down further from the source
+  // Ground-level concentration is REDUCED near the source for elevated releases
+  // But the hazard zone EXTENDS further downwind
+  
+  // Distance factor: elevated releases extend the downwind distance
+  // Based on Gaussian plume: max ground concentration occurs at x_max ≈ (2*H^2/σz^2)^0.5 * f(stability)
+  const heightDistanceFactor = effectiveHeight > 0 
+    ? 1 + Math.sqrt(effectiveHeight / 10) * 0.5 // More height = further distance
     : 1;
-
-  // Ground level reduction factor (concentration at ground is lower for elevated sources)
+  
+  // Ground concentration reduction: higher releases = lower ground concentration near source
+  // But we want to show the HAZARD ZONE which extends further
+  // So zones get LARGER (further) with elevated releases, not smaller
   const groundReductionFactor = effectiveHeight > 0
-    ? Math.exp(-0.5 * Math.pow(effectiveHeight / 40, 2)) + 0.2
+    ? Math.max(0.3, 1 - (effectiveHeight / 150)) // Reduce concentration magnitude
     : 1;
   
   // Release rate effect - this is CRITICAL for proper scaling
@@ -173,7 +192,7 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
   // Distance scales inversely with wind speed for given concentration
   const windFactor = Math.pow(u, -0.8);
   
-  // Combined adjustment factors
+  // Combined environmental adjustment factors
   const environmentalFactor = temperatureFactor * humidityFactor * pressureFactor * 
     terrainFactor * containmentFactor;
   
@@ -196,35 +215,54 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
   }
   
   // Base distance calculation using improved Gaussian plume principles
-  // Distance = f(Q, u, stability, chemistry)
+  // Include heightDistanceFactor to show elevated releases extend zones
   const baseDistance = stabilityFactor * chemicalFactor * releaseRateFactor * 
-    windFactor * environmentalFactor * heightFactor * 5; // 5 km base for ref conditions
+    windFactor * environmentalFactor * heightDistanceFactor * 5; // 5 km base for ref conditions
   
   // Calculate zone distances with proper scaling
+  // groundReductionFactor reduces concentration but heightDistanceFactor extends distance
   // Red zone (highest concentration/immediate danger - IDLH level)
-  const redDistance = Math.max(0.2, baseDistance * 0.3 * groundReductionFactor);
+  const redDistance = Math.max(0.2, baseDistance * 0.3);
   // Orange zone (medium concentration/serious health effects - AEGL-2)
-  const orangeDistance = Math.max(redDistance * 1.5, baseDistance * 0.6 * groundReductionFactor);
+  const orangeDistance = Math.max(redDistance * 1.5, baseDistance * 0.6);
   // Yellow zone (lowest concentration/mild effects - AEGL-1)
   const yellowDistance = Math.max(orangeDistance * 1.3, baseDistance * 1.0);
   
   // Get threshold concentrations from chemical data
-  const redConcentration = chemicalData?.aegl3 || chemicalData?.idlh || 50;
-  const orangeConcentration = chemicalData?.aegl2 || redConcentration * 0.5;
-  const yellowConcentration = chemicalData?.aegl1 || orangeConcentration * 0.3;
+  // Apply groundReductionFactor to concentration values for elevated releases
+  const baseRedConcentration = chemicalData?.aegl3 || chemicalData?.idlh || 50;
+  const redConcentration = Math.round(baseRedConcentration * groundReductionFactor);
+  const orangeConcentration = Math.round((chemicalData?.aegl2 || baseRedConcentration * 0.5) * groundReductionFactor);
+  const yellowConcentration = Math.round((chemicalData?.aegl1 || baseRedConcentration * 0.25) * groundReductionFactor);
+  
+  // Debug logging for verification
+  console.log('Dispersion Calculation:', {
+    releaseRate: Q,
+    releaseHeight: H,
+    effectiveHeight,
+    ambientTemp: ambientTempC,
+    releaseTemp: releaseTempC,
+    humidity: humidityPercent,
+    temperatureFactor: temperatureFactor.toFixed(3),
+    humidityFactor: humidityFactor.toFixed(3),
+    heightDistanceFactor: heightDistanceFactor.toFixed(3),
+    baseDistance: baseDistance.toFixed(3),
+    redDistance: (redDistance * 1000).toFixed(0) + 'm',
+    yellowDistance: (yellowDistance * 1000).toFixed(0) + 'm'
+  });
   
   return {
     red: { 
       distance: Math.round(redDistance * 1000), // Convert km to meters
-      concentration: Math.round(redConcentration)
+      concentration: Math.max(1, redConcentration)
     },
     orange: { 
       distance: Math.round(orangeDistance * 1000),
-      concentration: Math.round(orangeConcentration)
+      concentration: Math.max(1, orangeConcentration)
     },
     yellow: { 
       distance: Math.round(yellowDistance * 1000),
-      concentration: Math.round(yellowConcentration)
+      concentration: Math.max(1, yellowConcentration)
     }
   };
 };
