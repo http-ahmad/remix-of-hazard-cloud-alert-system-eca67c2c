@@ -69,14 +69,14 @@ const GaussianPlumeDispersion: React.FC = () => {
     'Toluene': { high: 750, moderate: 375, low: 150 }
   };
 
-  // Atmospheric stability classes
+  // Atmospheric stability classes with Pasquill-Gifford coefficients
   const stabilityClasses = {
-    A: { alpha: 0.22, beta: 0.0001 }, // Very unstable
-    B: { alpha: 0.16, beta: 0.0001 }, // Moderately unstable
-    C: { alpha: 0.11, beta: 0.0001 }, // Slightly unstable
-    D: { alpha: 0.08, beta: 0.0001 }, // Neutral
-    E: { alpha: 0.06, beta: 0.0003 }, // Slightly stable
-    F: { alpha: 0.04, beta: 0.0015 }  // Moderately stable
+    A: { alpha: 0.22, beta: 0.0001, sigmaZa: 0.20, sigmaZb: 0.0 }, // Very unstable
+    B: { alpha: 0.16, beta: 0.0001, sigmaZa: 0.12, sigmaZb: 0.0 }, // Moderately unstable
+    C: { alpha: 0.11, beta: 0.0001, sigmaZa: 0.08, sigmaZb: 0.0002 }, // Slightly unstable
+    D: { alpha: 0.08, beta: 0.0001, sigmaZa: 0.06, sigmaZb: 0.0015 }, // Neutral
+    E: { alpha: 0.06, beta: 0.0003, sigmaZa: 0.03, sigmaZb: 0.0003 }, // Slightly stable
+    F: { alpha: 0.04, beta: 0.0015, sigmaZa: 0.016, sigmaZb: 0.0003 }  // Moderately stable
   };
 
   // Determine stability class based on wind speed (simplified)
@@ -89,30 +89,41 @@ const GaussianPlumeDispersion: React.FC = () => {
     return 'A';
   };
 
-  // Gaussian plume concentration calculation
+  // Enhanced Gaussian plume concentration calculation with environmental factors
   const calculateConcentration = (
     x: number, // downwind distance (m)
     y: number, // crosswind distance (m)
-    z: number, // height (m)
+    z: number, // receptor height (m)
     Q: number, // emission rate (g/s)
     u: number, // wind speed (m/s)
-    h: number, // effective stack height (m)
-    stability: keyof typeof stabilityClasses
+    H: number, // effective stack height (m)
+    stability: keyof typeof stabilityClasses,
+    tempFactor: number = 1, // temperature adjustment
+    humidityFactor: number = 1 // humidity adjustment
   ): number => {
-    const { alpha, beta } = stabilityClasses[stability];
+    if (x <= 0) return 0;
     
-    // Dispersion parameters
+    const { alpha, beta, sigmaZa, sigmaZb } = stabilityClasses[stability];
+    
+    // Pasquill-Gifford dispersion parameters
     const sigmaY = alpha * x * Math.pow(1 + beta * x, -0.5);
-    const sigmaZ = alpha * x * Math.pow(1 + beta * x, -0.5);
+    const sigmaZ = sigmaZa * x * Math.pow(1 + sigmaZb * x, -0.5);
     
-    // Gaussian plume equation
-    const concentration = 
-      (Q / (2 * Math.PI * u * sigmaY * sigmaZ)) *
-      Math.exp(-0.5 * Math.pow(y / sigmaY, 2)) *
-      (Math.exp(-0.5 * Math.pow((z - h) / sigmaZ, 2)) + 
-       Math.exp(-0.5 * Math.pow((z + h) / sigmaZ, 2)));
+    // Ensure minimum sigma values to prevent division issues
+    const sY = Math.max(sigmaY, 1);
+    const sZ = Math.max(sigmaZ, 1);
     
-    return concentration * 1000; // Convert to mg/m³
+    // Full Gaussian plume equation with ground reflection
+    const expY = Math.exp(-0.5 * Math.pow(y / sY, 2));
+    const expZ1 = Math.exp(-0.5 * Math.pow((z - H) / sZ, 2));
+    const expZ2 = Math.exp(-0.5 * Math.pow((z + H) / sZ, 2)); // Ground reflection
+    
+    // Apply environmental adjustment factors
+    const adjustedQ = Q * tempFactor * humidityFactor;
+    
+    const concentration = (adjustedQ / (2 * Math.PI * u * sY * sZ)) * expY * (expZ1 + expZ2);
+    
+    return concentration * 1000; // Convert g/m³ to mg/m³
   };
 
   // Generate ALOHA-style elliptical plume polygon for a given concentration threshold
@@ -123,17 +134,17 @@ const GaussianPlumeDispersion: React.FC = () => {
     u: number, // wind speed in m/s
     windDirection: number, // meteorological wind direction (degrees, 0=N, 90=E)
     stability: keyof typeof stabilityClasses,
-    releaseHeight: number = 10 // stack height in meters
+    releaseHeight: number, // stack height in meters
+    tempFactor: number, // temperature adjustment factor
+    humidityFactor: number // humidity adjustment factor
   ): LatLngExpression[] => {
     const points: LatLngExpression[] = [];
-    const { alpha, beta } = stabilityClasses[stability];
+    const { alpha, beta, sigmaZa, sigmaZb } = stabilityClasses[stability];
     
     // Meteorological convention: wind direction is where wind COMES FROM
     // 0° = North (wind blows TO the south), 90° = East (wind blows TO the west)
-    // We need to convert to the direction the plume travels (opposite direction)
-    // Plume travels in the direction the wind is blowing TO
     const plumeDirection = (windDirection + 180) % 360; // Direction plume travels
-    const windRad = (90 - plumeDirection) * Math.PI / 180; // Convert to math angle (0=East, CCW positive)
+    const windRad = (90 - plumeDirection) * Math.PI / 180; // Convert to math angle
     
     // Effective wind speed (minimum to prevent division by zero)
     const effectiveWindSpeed = Math.max(0.5, u);
@@ -142,22 +153,35 @@ const GaussianPlumeDispersion: React.FC = () => {
     const H = Math.max(0, releaseHeight);
     
     // Find maximum downwind distance where concentration exceeds threshold
-    // Account for release rate properly - higher Q = longer plume
+    // Scale search distance with release rate - larger releases travel further
     let maxDownwindDistance = 0;
-    const maxSearchDistance = Math.min(50000, 500 + Q * 100); // Scale search with Q
+    const maxSearchDistance = Math.max(1000, Math.min(100000, Q * 500 + 2000));
     
-    for (let x = 50; x <= maxSearchDistance; x += 50) {
-      const concentration = calculateConcentration(x, 0, 0, Q, effectiveWindSpeed, H, stability);
+    // Search for the maximum distance where ground-level concentration exceeds threshold
+    for (let x = 50; x <= maxSearchDistance; x += Math.max(25, x * 0.05)) {
+      const concentration = calculateConcentration(x, 0, 0, Q, effectiveWindSpeed, H, stability, tempFactor, humidityFactor);
       if (concentration >= threshold) {
         maxDownwindDistance = x;
       } else if (maxDownwindDistance > 0) {
+        // Found the boundary
         break;
       }
     }
     
+    // Log for debugging
+    console.log('Plume calculation:', {
+      Q_gs: Q.toFixed(3),
+      threshold,
+      releaseHeight: H,
+      tempFactor: tempFactor.toFixed(3),
+      humidityFactor: humidityFactor.toFixed(3),
+      maxDownwindDistance: maxDownwindDistance.toFixed(0) + 'm',
+      stability
+    });
+    
     if (maxDownwindDistance === 0) {
-      // Return small circle if no significant plume
-      const radius = 100 + Q * 10; // Scale minimum size with release rate
+      // Return small circle if no significant plume - scale with Q
+      const radius = Math.max(50, Math.min(500, Q * 20 + 50));
       for (let angle = 0; angle <= 2 * Math.PI; angle += Math.PI / 24) {
         const deltaLat = (radius * Math.cos(angle)) / 111000;
         const deltaLng = (radius * Math.sin(angle)) / (111000 * Math.cos(sourceLocation.lat * Math.PI / 180));
@@ -170,8 +194,7 @@ const GaussianPlumeDispersion: React.FC = () => {
     const leftSide: LatLngExpression[] = [];
     const rightSide: LatLngExpression[] = [];
     
-    // Create smooth elliptical boundary using proper atmospheric dispersion
-    const numSegments = 80; // High resolution for smooth curves
+    const numSegments = 80;
     
     for (let i = 1; i <= numSegments; i++) {
       const fraction = i / numSegments;
@@ -179,43 +202,35 @@ const GaussianPlumeDispersion: React.FC = () => {
       
       // Calculate atmospheric dispersion parameters at this distance
       const sigmaY = alpha * x * Math.pow(1 + beta * x, -0.5);
-      const sigmaZ = alpha * x * Math.pow(1 + beta * x, -0.5);
       
-      // For ALOHA-style plumes, use 2.5 * sigma for the boundary
-      // This captures approximately 99% of the concentration
-      let maxCrosswind = 2.5 * sigmaY;
-      
-      // Refine crosswind distance to match exact threshold
+      // Find crosswind distance where concentration equals threshold
+      let maxCrosswind = 3.0 * sigmaY;
       let bestCrosswind = 0;
-      for (let y = 0; y <= maxCrosswind; y += maxCrosswind / 50) {
-        const concentration = calculateConcentration(x, y, 0, Q, effectiveWindSpeed, H, stability);
+      
+      for (let y = 0; y <= maxCrosswind; y += maxCrosswind / 40) {
+        const concentration = calculateConcentration(x, y, 0, Q, effectiveWindSpeed, H, stability, tempFactor, humidityFactor);
         if (concentration >= threshold) {
           bestCrosswind = y;
         }
       }
       
-      // Use the refined crosswind distance
       const crosswindDistance = bestCrosswind;
       
-      if (crosswindDistance > 5) { // Only significant distances
-        // Apply ALOHA-style smoothing factor for realistic plume shape
-        const smoothingFactor = Math.pow(fraction, 0.7); // Creates proper teardrop shape
+      if (crosswindDistance > 5) {
+        const smoothingFactor = Math.pow(fraction, 0.6);
         const adjustedCrosswind = crosswindDistance * smoothingFactor;
         
-        // Convert to geographic coordinates with proper wind rotation
         const deltaLatX = (x * Math.cos(windRad)) / 111000;
         const deltaLngX = (x * Math.sin(windRad)) / (111000 * Math.cos(sourceLocation.lat * Math.PI / 180));
         
         const deltaLatY = (-adjustedCrosswind * Math.sin(windRad)) / 111000;
         const deltaLngY = (adjustedCrosswind * Math.cos(windRad)) / (111000 * Math.cos(sourceLocation.lat * Math.PI / 180));
         
-        // Left boundary (negative crosswind)
         leftSide.push([
           sourceLocation.lat + deltaLatX - deltaLatY,
           sourceLocation.lng + deltaLngX - deltaLngY
         ]);
         
-        // Right boundary (positive crosswind)  
         rightSide.push([
           sourceLocation.lat + deltaLatX + deltaLatY,
           sourceLocation.lng + deltaLngX + deltaLngY
@@ -223,44 +238,69 @@ const GaussianPlumeDispersion: React.FC = () => {
       }
     }
     
-    // Create proper ALOHA-style closed ellipse
-    points.push([sourceLocation.lat, sourceLocation.lng]); // Source point
-    
-    // Add left side points
+    // Create closed polygon
+    points.push([sourceLocation.lat, sourceLocation.lng]);
     for (const point of leftSide) {
       points.push(point);
     }
-    
-    // Add tip of plume (furthest downwind point)
     if (rightSide.length > 0) {
       const tipPoint = rightSide[rightSide.length - 1];
       points.push([tipPoint[0], tipPoint[1]]);
     }
-    
-    // Add right side points in reverse order
     for (let i = rightSide.length - 2; i >= 0; i--) {
       points.push(rightSide[i]);
     }
-    
-    // Close the polygon at source
     points.push([sourceLocation.lat, sourceLocation.lng]);
     
     return points;
   };
 
-  const calculateDispersion = () => {
+  const calculateDispersionModel = () => {
     setIsCalculating(true);
     
     try {
-      const Q = (parameters.releaseRate / 3600) * 1000; // Convert kg/hr to g/s
+      // Convert release rate from kg/hr to g/s
+      // kg/hr -> g/s: multiply by 1000 (kg to g), divide by 3600 (hr to s)
+      const Q = (parameters.releaseRate * 1000) / 3600;
+      
       const stability = getStabilityClass(parameters.windSpeed);
       const thresholds = chemicalThresholds[parameters.chemicalName] || chemicalThresholds['Chlorine'];
+      
+      // Calculate temperature factor
+      // Higher temperature = more buoyancy and evaporation = higher effective emission
+      const ambientTempK = 293.15; // Reference 20°C
+      const releaseTempK = parameters.releaseTemperature + 273.15;
+      const tempFactor = Math.pow(releaseTempK / ambientTempK, 1.2);
+      
+      // Calculate humidity factor
+      // Higher humidity = more deposition/washout = lower effective concentration
+      // 0% RH -> 1.5x, 50% RH -> 1.0x, 100% RH -> 0.5x
+      const humidityFactor = 1.5 - (parameters.relativeHumidity / 100);
+      
+      // Calculate effective release height with buoyancy
+      const buoyancyRise = parameters.releaseTemperature > 20 
+        ? Math.min(50, (parameters.releaseTemperature - 20) * 0.3) 
+        : 0;
+      const effectiveHeight = parameters.releaseHeight + buoyancyRise;
+      
+      console.log('Dispersion Model Parameters:', {
+        releaseRate_kghr: parameters.releaseRate,
+        Q_gs: Q.toFixed(4),
+        releaseHeight: parameters.releaseHeight,
+        effectiveHeight: effectiveHeight.toFixed(1),
+        releaseTemp: parameters.releaseTemperature,
+        humidity: parameters.relativeHumidity,
+        tempFactor: tempFactor.toFixed(3),
+        humidityFactor: humidityFactor.toFixed(3),
+        windDirection: parameters.windDirection,
+        stability
+      });
       
       const sourceLocation = { lat: parameters.latitude, lng: parameters.longitude };
       
       const newZones: ConcentrationZone[] = [
         {
-          polygon: generatePlumePolygon(sourceLocation, thresholds.low, Q, parameters.windSpeed, parameters.windDirection, stability, parameters.releaseHeight),
+          polygon: generatePlumePolygon(sourceLocation, thresholds.low, Q, parameters.windSpeed, parameters.windDirection, stability, effectiveHeight, tempFactor, humidityFactor),
           color: '#eab308',
           fillColor: '#fef3c7',
           fillOpacity: 0.4,
@@ -270,7 +310,7 @@ const GaussianPlumeDispersion: React.FC = () => {
           threshold: 'Low Risk - Enhanced Monitoring'
         },
         {
-          polygon: generatePlumePolygon(sourceLocation, thresholds.moderate, Q, parameters.windSpeed, parameters.windDirection, stability, parameters.releaseHeight),
+          polygon: generatePlumePolygon(sourceLocation, thresholds.moderate, Q, parameters.windSpeed, parameters.windDirection, stability, effectiveHeight, tempFactor, humidityFactor),
           color: '#ea580c',
           fillColor: '#fed7aa',
           fillOpacity: 0.5,
@@ -280,7 +320,7 @@ const GaussianPlumeDispersion: React.FC = () => {
           threshold: 'Moderate Risk - Shelter in Place'
         },
         {
-          polygon: generatePlumePolygon(sourceLocation, thresholds.high, Q, parameters.windSpeed, parameters.windDirection, stability, parameters.releaseHeight),
+          polygon: generatePlumePolygon(sourceLocation, thresholds.high, Q, parameters.windSpeed, parameters.windDirection, stability, effectiveHeight, tempFactor, humidityFactor),
           color: '#dc2626',
           fillColor: '#fecaca',
           fillOpacity: 0.6,
@@ -323,7 +363,7 @@ const GaussianPlumeDispersion: React.FC = () => {
 
   useEffect(() => {
     if (zones.length === 0) {
-      calculateDispersion();
+      calculateDispersionModel();
     }
   }, []);
 
@@ -475,7 +515,7 @@ const GaussianPlumeDispersion: React.FC = () => {
           </div>
           
           <Button 
-            onClick={calculateDispersion} 
+            onClick={calculateDispersionModel} 
             disabled={isCalculating}
             className="w-full md:w-auto"
           >
