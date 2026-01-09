@@ -170,9 +170,14 @@ const EmergencyModel = () => {
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
 
-  // Auto-detect location on mount
+  // Auto-detect location on mount with retry logic
   useEffect(() => {
-    if (navigator.geolocation) {
+    const attemptGeolocation = (retryCount = 0, maxRetries = 3) => {
+      if (!navigator.geolocation) {
+        setIsLoadingLocation(false);
+        return;
+      }
+
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
@@ -190,19 +195,33 @@ const EmergencyModel = () => {
           fetchWeatherData(latitude, longitude);
         },
         (error) => {
-          console.error('Geolocation error:', error);
+          console.error('Geolocation error:', error.code, error.message);
+          
+          // Retry on timeout or position unavailable errors
+          if (retryCount < maxRetries && (error.code === 2 || error.code === 3)) {
+            console.log(`Retrying geolocation... attempt ${retryCount + 2}/${maxRetries + 1}`);
+            setTimeout(() => attemptGeolocation(retryCount + 1, maxRetries), 1500);
+            return;
+          }
+          
           setIsLoadingLocation(false);
           toast({
             title: "Location Not Available",
-            description: "Using default location. You can set coordinates manually.",
+            description: error.code === 1 
+              ? "Location permission denied. Please enable location access or enter coordinates manually."
+              : "Unable to detect location. You can set coordinates manually.",
             variant: "destructive"
           });
         },
-        { timeout: 10000, enableHighAccuracy: true }
+        { 
+          timeout: 15000, 
+          enableHighAccuracy: false, // Start with low accuracy for faster response
+          maximumAge: 300000 // Accept cached position up to 5 minutes old
+        }
       );
-    } else {
-      setIsLoadingLocation(false);
-    }
+    };
+
+    attemptGeolocation();
   }, []);
 
   // Fetch weather data from a free API
