@@ -1,4 +1,4 @@
-# ELDSM - Emergency Leakage and Dispersion Selection Model
+# ELDQM - Emergency Leakage and Dispersion Selection Model
 
 Advanced industrial safety monitoring system for chemical leak detection and dispersion modeling with real-time alerts.
 
