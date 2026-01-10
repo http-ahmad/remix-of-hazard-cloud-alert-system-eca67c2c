@@ -9,7 +9,15 @@
  */
 
 import { chemicalDatabase } from '@/utils/chemicalDatabase';
-import { clamp, roundTo, isValidCoordinate, safeParseNumber } from '@/utils/errorHandler';
+import { clamp, roundTo, safeParseNumber } from '@/utils/errorHandler';
+import { performanceMonitor } from '@/utils/performanceMonitor';
+import { 
+  calculateSigmaY as gpSigmaY, 
+  calculateSigmaZ as gpSigmaZ,
+  calculateConcentration as gpConcentration,
+  convertToGaussianParams,
+  calculateHazardZones,
+} from '@/utils/gaussianPlume';
 
 interface ModelParameters {
   chemicalType: string;
