@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo, lazy, Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,50 +6,47 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { LatLngExpression, Icon } from 'leaflet';
+import { Icon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { 
   Wind, 
-  Thermometer, 
-  Droplets, 
-  Gauge, 
   MapPin, 
   AlertTriangle, 
   Play, 
   Pause, 
   RotateCcw,
-  Download,
-  Eye,
-  EyeOff,
+  Target,
+  Layers,
   Plus,
   Copy,
   Trash2,
-  Settings,
-  Activity,
-  Target,
-  Layers
+  Eye,
+  EyeOff,
+  Activity
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { calculateDispersion } from "@/utils/dispersionModel";
-import { calculateMultipleSourceDispersion } from "@/utils/multipleSourceDispersion";
 import { chemicalDatabase } from "@/utils/chemicalDatabase";
-import WeatherDataDisplay from "@/components/WeatherDataDisplay";
-import EnhancedConcentrationCharts from "@/components/EnhancedConcentrationCharts";
-import HazardAssessment from "@/components/HazardAssessment";
-import EnhancedLeakageMap from "@/components/EnhancedLeakageMap";
-import SensorManagement from "@/components/SensorManagement";
-import ReportGeneration from "@/components/ReportGeneration";
-import SimulationComparison from "@/components/SimulationComparison";
-import MultipleSourceManager from "@/components/MultipleSourceManager";
-import EnhancedMultiSourceManager from "@/components/EnhancedMultiSourceManager";
-import EmergencyContacts from "@/components/EmergencyContacts";
-import EvacuationRoutes from "@/components/EvacuationRoutes";
-import ResourceManagement from "@/components/ResourceManagement";
-import GaussianPlumeDispersion from "@/components/GaussianPlumeDispersion";
+import { useDebouncedCallback } from "@/hooks/useDebounce";
+import { safeParseNumber, safeAsync, retryWithBackoff } from "@/utils/errorHandler";
+import LoadingSpinner from "@/components/LoadingSpinner";
+
+// Lazy load heavy components for better initial load
+const EnhancedLeakageMap = lazy(() => import("@/components/EnhancedLeakageMap"));
+const GaussianPlumeDispersion = lazy(() => import("@/components/GaussianPlumeDispersion"));
+const EnhancedConcentrationCharts = lazy(() => import("@/components/EnhancedConcentrationCharts"));
+const HazardAssessment = lazy(() => import("@/components/HazardAssessment"));
+const SensorManagement = lazy(() => import("@/components/SensorManagement"));
+const ReportGeneration = lazy(() => import("@/components/ReportGeneration"));
+const SimulationComparison = lazy(() => import("@/components/SimulationComparison"));
+const MultipleSourceManager = lazy(() => import("@/components/MultipleSourceManager"));
+const EnhancedMultiSourceManager = lazy(() => import("@/components/EnhancedMultiSourceManager"));
+const EmergencyContacts = lazy(() => import("@/components/EmergencyContacts"));
+const EvacuationRoutes = lazy(() => import("@/components/EvacuationRoutes"));
+const ResourceManagement = lazy(() => import("@/components/ResourceManagement"));
+const WeatherDataDisplay = lazy(() => import("@/components/WeatherDataDisplay"));
 
 interface ModelParameters {
   sourceLocation: { lat: number; lng: number };
@@ -224,52 +221,61 @@ const EmergencyModel = () => {
     attemptGeolocation();
   }, []);
 
-  // Fetch weather data from a free API
-  const fetchWeatherData = async (lat: number, lng: number) => {
+  // Fetch weather data with retry logic and error handling
+  const fetchWeatherData = useCallback(async (lat: number, lng: number) => {
     setIsLoadingWeather(true);
-    try {
-      // Using Open-Meteo free API (no API key required)
-      const response = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const current = data.current;
-        
-        setModelParams(prev => {
-          const nextAmbientTemp = Math.round(current.temperature_2m * 10) / 10;
-          const nextHumidity = Math.round(current.relative_humidity_2m);
-          const nextWindSpeed = Math.round((current.wind_speed_10m / 3.6) * 10) / 10; // km/h -> m/s
-          const nextWindDirection = Math.round(current.wind_direction_10m);
-
-          // If release temperature was never manually changed, keep it synced with ambient.
-          const shouldSyncReleaseTemp = prev.releaseTemperature === prev.temperature;
-
-          return {
-            ...prev,
-            temperature: nextAmbientTemp,
-            humidity: nextHumidity,
-            windSpeed: nextWindSpeed,
-            windDirection: nextWindDirection,
-            releaseTemperature: shouldSyncReleaseTemp ? nextAmbientTemp : prev.releaseTemperature
-          };
-        });
-        
-        toast({
-          title: "Weather Data Loaded",
-          description: `Temp: ${current.temperature_2m}°C, Wind: ${(current.wind_speed_10m / 3.6).toFixed(1)} m/s from ${current.wind_direction_10m}°`,
-        });
+    
+    const result = await safeAsync(
+      () => retryWithBackoff(
+        async () => {
+          const response = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m`,
+            { signal: AbortSignal.timeout(10000) }
+          );
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        },
+        { maxRetries: 2, initialDelay: 1000 }
+      ),
+      {
+        onError: (error) => {
+          console.error('Weather fetch error:', error);
+          toast({
+            title: "Weather Data Unavailable",
+            description: "Using default atmospheric conditions.",
+            variant: "destructive"
+          });
+        }
       }
-    } catch (error) {
-      console.error('Weather fetch error:', error);
+    );
+
+    if (result?.current) {
+      const current = result.current;
+      setModelParams(prev => {
+        const nextAmbientTemp = safeParseNumber(current.temperature_2m, { fallback: 20 });
+        const nextHumidity = safeParseNumber(current.relative_humidity_2m, { fallback: 50, min: 0, max: 100 });
+        const nextWindSpeed = safeParseNumber(current.wind_speed_10m / 3.6, { fallback: 5, min: 0 });
+        const nextWindDirection = safeParseNumber(current.wind_direction_10m, { fallback: 180, min: 0, max: 360 });
+        const shouldSyncReleaseTemp = prev.releaseTemperature === prev.temperature;
+
+        return {
+          ...prev,
+          temperature: Math.round(nextAmbientTemp * 10) / 10,
+          humidity: Math.round(nextHumidity),
+          windSpeed: Math.round(nextWindSpeed * 10) / 10,
+          windDirection: Math.round(nextWindDirection),
+          releaseTemperature: shouldSyncReleaseTemp ? Math.round(nextAmbientTemp * 10) / 10 : prev.releaseTemperature
+        };
+      });
+      
       toast({
-        title: "Weather Data Unavailable",
-        description: "Using default atmospheric conditions.",
-        variant: "destructive"
+        title: "Weather Data Loaded",
+        description: `Temp: ${current.temperature_2m}°C, Wind: ${(current.wind_speed_10m / 3.6).toFixed(1)} m/s`,
       });
     }
+    
     setIsLoadingWeather(false);
-  };
+  }, []);
 
   // Get chemical properties helper function
   const getChemicalProperties = (chemicalType: string) => {
@@ -399,22 +405,25 @@ const EmergencyModel = () => {
     }, 200);
   };
 
-  // Map component with real Leaflet integration - uses live zone data
-  const LeafletMapComponent = () => {
-    return (
-      <div className="h-full w-full">
+  // Memoized location change handler
+  const handleLocationChange = useCallback((location: { lat: number; lng: number }) => {
+    setModelParams(prev => ({
+      ...prev,
+      sourceLocation: location
+    }));
+  }, []);
+
+  // Memoized map component for performance
+  const LeafletMapComponent = useMemo(() => (
+    <div className="h-full w-full">
+      <Suspense fallback={<LoadingSpinner text="Loading map..." />}>
         <EnhancedLeakageMap
           showLeakage={showLeakage}
           windDirection={modelParams.windDirection}
           windSpeed={modelParams.windSpeed}
           sourceLocation={modelParams.sourceLocation}
           zoneData={liveZoneData}
-          onLocationChange={(location) => {
-            setModelParams({
-              ...modelParams,
-              sourceLocation: location
-            });
-          }}
+          onLocationChange={handleLocationChange}
           selectingLocation={false}
           detected={false}
           sensorLocations={sensorLocations}
@@ -427,9 +436,23 @@ const EmergencyModel = () => {
           ambientTemperature={modelParams.temperature}
           releaseTemperature={modelParams.releaseTemperature}
         />
-      </div>
-    );
-  };
+      </Suspense>
+    </div>
+  ), [
+    showLeakage,
+    modelParams.windDirection,
+    modelParams.windSpeed,
+    modelParams.sourceLocation,
+    modelParams.chemicalType,
+    modelParams.releaseRate,
+    modelParams.releaseHeight,
+    modelParams.temperature,
+    modelParams.releaseTemperature,
+    liveZoneData,
+    handleLocationChange,
+    sensorLocations,
+    additionalSources
+  ]);
 
   // Multi-source AGL display component with horizontal scroll
   const MultiSourceAGLDisplay = () => {
@@ -1004,7 +1027,7 @@ const EmergencyModel = () => {
                     </div>
                   </CardHeader>
                   <CardContent className="h-[calc(100%-4rem)]">
-                    <LeafletMapComponent />
+                    {LeafletMapComponent}
                   </CardContent>
                 </Card>
               </ResizablePanel>
