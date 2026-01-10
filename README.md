@@ -1,73 +1,120 @@
-# Welcome to your Lovable project
+# ELDSM - Emergency Leakage and Dispersion Selection Model
 
-## Project info
+Advanced industrial safety monitoring system for chemical leak detection and dispersion modeling with real-time alerts.
 
-**URL**: https://lovable.dev/projects/1c03a65d-cc60-4218-bf3a-007000543b6b
+## Features
 
-## How can I edit this code?
+- **Gaussian Plume Dispersion Model** - Physics-based atmospheric dispersion calculations
+- **Real-time Weather Integration** - Live weather data for accurate modeling
+- **Interactive Maps** - Visualize hazard zones on OpenStreetMap
+- **Chemical Database** - Comprehensive chemical properties and thresholds
+- **Emergency Response Protocols** - Safety guidelines for different hazard levels
 
-There are several ways of editing your application.
+## Running in VS Code
 
-**Use Lovable**
+### Prerequisites
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/1c03a65d-cc60-4218-bf3a-007000543b6b) and start prompting.
+- **Node.js** (v18 or higher) - [Download here](https://nodejs.org/)
+- **npm** (comes with Node.js) or **bun**
 
-Changes made via Lovable will be committed automatically to this repo.
+### Setup Steps
 
-**Use your preferred IDE**
+1. **Clone or download the project** to your local machine
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+2. **Open the project folder in VS Code**
+   ```bash
+   code /path/to/your/project
+   ```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+3. **Open the integrated terminal** in VS Code (View → Terminal or `Ctrl+``)
 
-Follow these steps:
+4. **Install dependencies**
+   ```bash
+   npm install
+   ```
+   Or with bun:
+   ```bash
+   bun install
+   ```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+5. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+   Or with bun:
+   ```bash
+   bun run dev
+   ```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+6. **Open the app** - Navigate to `http://localhost:5173` in your browser
 
-# Step 3: Install the necessary dependencies.
-npm i
+### VS Code Recommended Extensions
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+- **ESLint** - For code linting
+- **Tailwind CSS IntelliSense** - For Tailwind class autocomplete
+- **TypeScript Vue Plugin (Volar)** - For better TypeScript support
+- **Prettier** - For code formatting
+
+### Building for Production
+
+```bash
+npm run build
 ```
 
-**Edit a file directly in GitHub**
+The production build will be in the `dist/` folder.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Preview Production Build
 
-**Use GitHub Codespaces**
+```bash
+npm run preview
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Technical Details
 
-## What technologies are used for this project?
+### Dispersion Model Parameters
 
-This project is built with:
+The Gaussian Plume model considers these factors:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
+| Parameter | Effect on Plume |
+|-----------|----------------|
+| **Release Rate** | Higher rate → Larger plume (√Q scaling) |
+| **Release Height** | Higher release → Further ground touchdown, extended hazard zone |
+| **Release Temperature** | Higher temp → More buoyancy rise, wider spread |
+| **Ambient Temperature** | Warmer air → More turbulent mixing |
+| **Relative Humidity** | Higher humidity → Shorter plume (particle deposition) |
+| **Wind Speed** | Higher speed → More dilution, but wider extent |
+| **Stability Class** | A (unstable) → vertical mixing; F (stable) → horizontal spread |
+
+### Wind Direction Convention
+
+- **0° = North** (wind coming FROM the north, plume travels SOUTH)
+- **90° = East** (wind coming FROM the east, plume travels WEST)
+- **180° = South**, **270° = West**
+
+## Project Structure
+
+```
+src/
+├── components/        # React components
+│   ├── ui/           # shadcn/ui components
+│   └── ...           # Feature components
+├── pages/            # Page components
+├── utils/            # Utility functions
+│   ├── dispersionModel.ts    # Core dispersion calculations
+│   └── chemicalDatabase.ts   # Chemical properties
+├── hooks/            # Custom React hooks
+└── lib/              # Library utilities
+```
+
+## Technologies
+
+- React 18 + TypeScript
+- Vite (build tool)
 - Tailwind CSS
+- shadcn/ui components
+- Leaflet / React-Leaflet (maps)
+- Recharts (charts)
 
-## How can I deploy this project?
+## License
 
-Simply open [Lovable](https://lovable.dev/projects/1c03a65d-cc60-4218-bf3a-007000543b6b) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+MIT License
