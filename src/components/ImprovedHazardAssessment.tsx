@@ -15,8 +15,8 @@ import {
   Heart,
   Brain
 } from "lucide-react";
-import { calculateHealthImpact } from '../utils/dispersionModel';
-import { chemicalDatabase, getExposureGuidelines, getThresholdDescriptions } from '../utils/chemicalDatabase';
+import { calculateHealthImpact } from '@/utils/dispersionModel';
+import { chemicalDatabase, getExposureGuidelines, getThresholdDescriptions } from '@/utils/chemicalDatabase';
 
 interface ImprovedHazardAssessmentProps {
   results: any;

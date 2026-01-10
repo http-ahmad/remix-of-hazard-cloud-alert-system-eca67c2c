@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MapPin, Navigation, Clock, Users, AlertTriangle, CheckCircle, Car, Footprints, Route as RouteIcon } from 'lucide-react';
-import EnhancedEvacuationMap from './EnhancedEvacuationMap';
+import EnhancedEvacuationMap from '@/components/EnhancedEvacuationMap';
 
 interface EvacuationRoute {
   id: string;

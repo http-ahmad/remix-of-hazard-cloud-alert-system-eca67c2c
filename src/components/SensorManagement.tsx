@@ -10,7 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
 import { AlertCircle, Shield } from 'lucide-react';
-import { generateSensorRecommendations } from "../utils/dispersionModel";
+import { generateSensorRecommendations } from "@/utils/dispersionModel";
 
 interface SensorLocation {
   id: string;
