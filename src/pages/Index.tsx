@@ -24,7 +24,7 @@ const Index = () => {
                 </Link>
               </Button>
               <Button variant="outline" size="lg" asChild>
-                <Link to="/docs">Documentation</Link>
+                <Link to="/about">Documentation</Link>
               </Button>
               <Button variant="outline" size="lg" asChild>
                 <a href="https://github.com/http-ahmad/ELDQM" target="_blank" rel="noopener noreferrer">
