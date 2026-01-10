@@ -1,6 +1,45 @@
-# ELDQM - Emergency Leakage and Dispersion Selection Model
+# ELDQM - Emergency Leakage and Dispersion Quantification Model
 
-Advanced industrial safety monitoring system for chemical leak detection and dispersion modeling with real-time alerts.
+Advanced industrial safety monitoring system with scientifically accurate Gaussian Plume dispersion modeling.
+
+## VSCode Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/http-ahmad/ELDQM.git
+cd ELDQM
+
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+
+# Run unit tests
+npm run test
+
+# Run tests with UI
+npm run test:ui
+```
+
+## Key Features
+
+- **Scientific Gaussian Plume Model** - Based on EPA AERMOD/ALOHA algorithms
+- **Real-time Weather Integration** - Auto-fetches live weather data
+- **Performance Monitoring** - Built-in performance tracking dashboard
+- **Unit Tested Calculations** - Validated against reference values
+- **Error Boundaries** - Graceful error handling throughout
+
+## Calculation Parameters
+
+| Parameter | Effect on Plume |
+|-----------|----------------|
+| Release Rate (kg/min) | Higher = larger zones (√Q scaling) |
+| Wind Speed (m/s) | Higher = more dilution, longer plume |
+| Release Height (m) | Higher = touchdown further downwind |
+| Release Temperature | Hotter = more buoyancy rise |
+| Stability Class (A-F) | A=unstable (more mixing), F=stable (further travel) |
+| Humidity (%) | Higher = more deposition, shorter plume |
 
 ## Features
 
