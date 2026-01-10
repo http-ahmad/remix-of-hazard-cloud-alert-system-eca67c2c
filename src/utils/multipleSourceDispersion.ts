@@ -1,5 +1,5 @@
 
-import { calculateDispersion, calculateDetailedDispersion, DetailedCalculationResults } from './dispersionModel';
+import { calculateDispersion, calculateDetailedDispersion, DetailedCalculationResults } from '@/utils/dispersionModel';
 
 export interface MultipleSourceParameters {
   sources: Array<{

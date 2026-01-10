@@ -3,7 +3,7 @@
  * Dispersion calculation utilities with ALOHA-inspired algorithms
  */
 
-import { chemicalDatabase } from './chemicalDatabase';
+import { chemicalDatabase } from '@/utils/chemicalDatabase';
 
 interface ModelParameters {
   chemicalType: string;
