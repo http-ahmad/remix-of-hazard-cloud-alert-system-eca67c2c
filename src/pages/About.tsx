@@ -1,14 +1,11 @@
-
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Book, Users, Code, Info } from "lucide-react";
 import { Link } from "react-router-dom";
-
 const About = () => {
-  return (
-    <div className="container mx-auto py-8">
+  return <div className="container mx-auto py-8">
       <div className="flex items-center mb-8">
         <Button variant="ghost" asChild>
           <Link to="/emergency-model" className="flex items-center">
@@ -187,11 +184,11 @@ const About = () => {
                     <CardContent className="pt-6">
                       <h3 className="font-bold text-lg">Software Development</h3>
                       <ul className="mt-2 space-y-2">
-                        <li>Dr. Emily Chen - Lead Developer</li>
-                        <li>Michael Rodriguez - Frontend Engineer</li>
-                        <li>Sarah Johnson - UX/UI Designer</li>
-                        <li>Dr. David Park - Backend Developer</li>
-                        <li>Aisha Patel - QA Engineer</li>
+                        
+                        
+                        
+                        <li>Muhammad Ahmad</li>
+                        <li>Alisha Naveed</li>
                       </ul>
                     </CardContent>
                   </Card>
@@ -200,11 +197,11 @@ const About = () => {
                     <CardContent className="pt-6">
                       <h3 className="font-bold text-lg">Scientific Advisors</h3>
                       <ul className="mt-2 space-y-2">
-                        <li>Prof. Robert Keller - Atmospheric Science</li>
-                        <li>Dr. Lisa Wu - Chemical Engineering</li>
-                        <li>Prof. James Moretti - Environmental Toxicology</li>
-                        <li>Dr. Sophia Lee - Emergency Management</li>
-                        <li>Prof. Thomas Wright - Industrial Safety</li>
+                        
+                        
+                        
+                        <li>Prof. Zohaib Attique</li>
+                        <li>Prof. Imran Rashid</li>
                       </ul>
                     </CardContent>
                   </Card>
@@ -213,9 +210,7 @@ const About = () => {
               
               <div>
                 <h2 className="text-2xl font-bold mb-4">Acknowledgments</h2>
-                <p className="mb-4">
-                  This project was developed with support from the National Institute for Chemical Safety (NICS) and the Industrial Emergency Preparedness Foundation (IEPF).
-                </p>
+                <p className="mb-4">This project was developed with support from the UET </p>
                 <p>
                   Special thanks to the first responders, safety officers, and industrial hygienists who provided valuable feedback during the development and testing phases.
                 </p>
@@ -396,8 +391,6 @@ const About = () => {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
-  );
+    </div>;
 };
-
 export default About;
