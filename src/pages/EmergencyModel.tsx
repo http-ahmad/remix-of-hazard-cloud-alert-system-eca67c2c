@@ -65,7 +65,14 @@ interface ModelParameters {
   duration: number;
   stabilityClass: string;
   sourceHeight: number;
+  /** Surface roughness / terrain type */
+  terrainType: 'urban' | 'suburban' | 'rural' | 'water' | 'forest';
+  /** Mixing height / boundary layer height (m) */
+  mixingHeight: number;
+  /** Averaging time (minutes) - typically 10 for ALOHA */
+  averagingTime: number;
 }
+
 
 interface Source {
   id: string;
@@ -135,8 +142,12 @@ const EmergencyModel = () => {
     releaseHeight: 2.0,
     duration: 60,
     stabilityClass: 'D',
-    sourceHeight: 2.0
+    sourceHeight: 2.0,
+    terrainType: 'suburban',
+    mixingHeight: 1000,
+    averagingTime: 10,
   });
+
 
   const [additionalSources, setAdditionalSources] = useState<Source[]>([]);
   const [sensorLocations, setSensorLocations] = useState<SensorLocation[]>([
@@ -351,6 +362,11 @@ const EmergencyModel = () => {
         sourceHeight: modelParams.releaseHeight,
         releaseTemperature: modelParams.releaseTemperature,
         sourceLocation: modelParams.sourceLocation,
+        // New ALOHA parameters
+        terrainType: modelParams.terrainType,
+        mixingHeight: modelParams.mixingHeight,
+        averagingTime: modelParams.averagingTime,
+        leakDuration: modelParams.duration,
       });
       return results;
     } catch (error) {
@@ -372,7 +388,12 @@ const EmergencyModel = () => {
     modelParams.releaseHeight,
     modelParams.releaseTemperature,
     modelParams.sourceLocation,
+    modelParams.terrainType,
+    modelParams.mixingHeight,
+    modelParams.averagingTime,
+    modelParams.duration,
   ]);
+
 
   const runSimulation = () => {
     setIsSimulating(true);
@@ -684,12 +705,18 @@ const EmergencyModel = () => {
                             <Input
                               type="number"
                               step="0.1"
-                              min="0.1"
+                              min="0"
                               value={modelParams.releaseRate}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val > 0) {
-                                  setModelParams({ ...modelParams, releaseRate: val });
+                                const val = e.target.value;
+                                // Allow empty or zero during typing
+                                if (val === '' || val === '0') {
+                                  setModelParams({ ...modelParams, releaseRate: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 0) {
+                                  setModelParams({ ...modelParams, releaseRate: num });
                                 }
                               }}
                             />
@@ -702,9 +729,14 @@ const EmergencyModel = () => {
                               min="0"
                               value={modelParams.releaseHeight}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val >= 0) {
-                                  setModelParams({ ...modelParams, releaseHeight: val });
+                                const val = e.target.value;
+                                if (val === '' || val === '0') {
+                                  setModelParams({ ...modelParams, releaseHeight: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 0) {
+                                  setModelParams({ ...modelParams, releaseHeight: num });
                                 }
                               }}
                             />
@@ -716,15 +748,37 @@ const EmergencyModel = () => {
                               step="0.1"
                               value={modelParams.releaseTemperature}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val)) {
-                                  setModelParams({ ...modelParams, releaseTemperature: val });
+                                const val = e.target.value;
+                                if (val === '' || val === '0' || val === '-') {
+                                  setModelParams({ ...modelParams, releaseTemperature: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num)) {
+                                  setModelParams({ ...modelParams, releaseTemperature: num });
+                                }
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Label>Duration (minutes)</Label>
+                            <Input
+                              type="number"
+                              step="1"
+                              min="1"
+                              value={modelParams.duration}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const num = parseInt(val, 10);
+                                if (!isNaN(num) && num >= 0) {
+                                  setModelParams({ ...modelParams, duration: num });
                                 }
                               }}
                             />
                           </div>
                         </div>
                       </div>
+
 
                       {/* Weather Conditions */}
                       <div className="space-y-3 p-3 border rounded-lg mt-4">
@@ -741,9 +795,14 @@ const EmergencyModel = () => {
                               min="0"
                               value={modelParams.windSpeed}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val >= 0) {
-                                  setModelParams({...modelParams, windSpeed: val});
+                                const val = e.target.value;
+                                if (val === '' || val === '0') {
+                                  setModelParams({ ...modelParams, windSpeed: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 0) {
+                                  setModelParams({ ...modelParams, windSpeed: num });
                                 }
                               }}
                             />
@@ -757,11 +816,15 @@ const EmergencyModel = () => {
                               max="360"
                               value={modelParams.windDirection}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val)) {
-                                  // Normalize to 0-360 range
-                                  const normalized = ((val % 360) + 360) % 360;
-                                  setModelParams({...modelParams, windDirection: normalized});
+                                const val = e.target.value;
+                                if (val === '' || val === '0') {
+                                  setModelParams({ ...modelParams, windDirection: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num)) {
+                                  const normalized = ((num % 360) + 360) % 360;
+                                  setModelParams({ ...modelParams, windDirection: normalized });
                                 }
                               }}
                             />
@@ -773,9 +836,14 @@ const EmergencyModel = () => {
                               step="0.1"
                               value={modelParams.temperature}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val)) {
-                                  setModelParams({ ...modelParams, temperature: val });
+                                const val = e.target.value;
+                                if (val === '' || val === '0' || val === '-') {
+                                  setModelParams({ ...modelParams, temperature: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num)) {
+                                  setModelParams({ ...modelParams, temperature: num });
                                 }
                               }}
                             />
@@ -789,14 +857,92 @@ const EmergencyModel = () => {
                               max="100"
                               value={modelParams.humidity}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val >= 0 && val <= 100) {
-                                  setModelParams({...modelParams, humidity: val});
+                                const val = e.target.value;
+                                if (val === '' || val === '0') {
+                                  setModelParams({ ...modelParams, humidity: 0 });
+                                  return;
+                                }
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 0 && num <= 100) {
+                                  setModelParams({ ...modelParams, humidity: num });
                                 }
                               }}
                             />
                           </div>
+                          <div>
+                            <Label>Stability Class (A-F)</Label>
+                            <Select 
+                              value={modelParams.stabilityClass} 
+                              onValueChange={(value) => setModelParams({ ...modelParams, stabilityClass: value, atmosphericStability: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="A">A - Very Unstable</SelectItem>
+                                <SelectItem value="B">B - Unstable</SelectItem>
+                                <SelectItem value="C">C - Slightly Unstable</SelectItem>
+                                <SelectItem value="D">D - Neutral</SelectItem>
+                                <SelectItem value="E">E - Stable</SelectItem>
+                                <SelectItem value="F">F - Very Stable</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Terrain Type</Label>
+                            <Select 
+                              value={modelParams.terrainType} 
+                              onValueChange={(value: 'urban' | 'suburban' | 'rural' | 'water' | 'forest') => setModelParams({ ...modelParams, terrainType: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="urban">Urban (High Roughness)</SelectItem>
+                                <SelectItem value="suburban">Suburban</SelectItem>
+                                <SelectItem value="rural">Rural (Open Terrain)</SelectItem>
+                                <SelectItem value="water">Water (Smooth)</SelectItem>
+                                <SelectItem value="forest">Forest</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Mixing Height (m)</Label>
+                            <Input
+                              type="number"
+                              step="100"
+                              min="50"
+                              max="5000"
+                              value={modelParams.mixingHeight}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 0) {
+                                  setModelParams({ ...modelParams, mixingHeight: num });
+                                }
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Label>Averaging Time (min)</Label>
+                            <Select 
+                              value={String(modelParams.averagingTime)} 
+                              onValueChange={(value) => setModelParams({ ...modelParams, averagingTime: parseInt(value, 10) })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1">1 minute</SelectItem>
+                                <SelectItem value="10">10 minutes (ALOHA default)</SelectItem>
+                                <SelectItem value="15">15 minutes</SelectItem>
+                                <SelectItem value="30">30 minutes</SelectItem>
+                                <SelectItem value="60">60 minutes</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
+
                       </div>
 
                       {/* Multi-Source Manager */}

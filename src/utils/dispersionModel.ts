@@ -41,7 +41,14 @@ interface ModelParameters {
   leakDuration?: number;
   sensorCount?: number;
   monitoringMode?: 'continuous' | 'batch';
+  /** Surface roughness / terrain type */
+  terrainType?: 'urban' | 'suburban' | 'rural' | 'water' | 'forest';
+  /** Mixing height / boundary layer height (m) */
+  mixingHeight?: number;
+  /** Averaging time (minutes) - typically 10 for ALOHA */
+  averagingTime?: number;
 }
+
 
 interface ZoneData {
   red: { distance: number; concentration: number };
@@ -140,10 +147,19 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
   };
 
   try {
-    // Validate critical parameters early
-    const releaseRate = safeParseNumber(params.releaseRate, { fallback: 10, min: 0.01 });
-    const windSpeed = safeParseNumber(params.windSpeed, { fallback: 5, min: 0.1 });
+    // Validate critical parameters early - allow zero for some fields
+    const releaseRate = safeParseNumber(params.releaseRate, { fallback: 10, min: 0 });
+    const windSpeed = safeParseNumber(params.windSpeed, { fallback: 5, min: 0 });
     const sourceHeight = safeParseNumber(params.sourceHeight, { fallback: 0, min: 0 });
+    
+    // If release rate is zero, return minimal zones
+    if (releaseRate <= 0) {
+      return {
+        red: { distance: 0, concentration: 0 },
+        orange: { distance: 0, concentration: 0 },
+        yellow: { distance: 0, concentration: 0 }
+      };
+    }
     
     // Use cached stability factor lookup (O(1) instead of switch statement)
     const stabilityFactor = STABILITY_FACTORS[params.stabilityClass] ?? STABILITY_FACTORS['D'];
@@ -174,10 +190,23 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
       ? clamp(params.ambientPressure / 1013.25, 0.8, 1.2)
       : 1;
     
-    // Use cached terrain factor lookup
-    const terrainFactor = TERRAIN_FACTORS[params.terrain || 'default'] ?? TERRAIN_FACTORS['default'];
+    // Use terrainType if provided, fallback to terrain or default
+    const terrainKey = params.terrainType || params.terrain || 'default';
+    const terrainFactor = TERRAIN_FACTORS[terrainKey] ?? TERRAIN_FACTORS['default'];
+    
     // Indoor/outdoor adjustment
     const containmentFactor = params.isIndoor ? 0.3 : 1.0;
+    
+    // Mixing height effect - limits vertical plume growth
+    const mixingHeight = safeParseNumber(params.mixingHeight, { fallback: 1000, min: 50, max: 5000 });
+    // Shallow mixing layer = concentration stays higher at ground level
+    const mixingHeightFactor = Math.sqrt(mixingHeight / 1000);
+    
+    // Averaging time effect - longer averaging = lower peak concentration
+    // Reference: ALOHA uses 10-minute averaging
+    const averagingTime = safeParseNumber(params.averagingTime, { fallback: 10, min: 1, max: 60 });
+    // Power law: C(t2)/C(t1) = (t1/t2)^0.2
+    const averagingTimeFactor = Math.pow(10 / averagingTime, 0.2);
     
     // Get chemical data safely
     const chemicalKey = (params.chemicalType || 'ammonia').toLowerCase();
@@ -186,7 +215,12 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
     // Release height effect on ground-level concentration
     // Using proper Gaussian plume physics for elevated releases
     const H = sourceHeight; // Release height in meters
-    const u = Math.max(0.5, windSpeed); // Wind speed, minimum 0.5 m/s
+    // Wind speed for calculations - use minimum 0.5 m/s for stability, but allow calm conditions
+    const u = Math.max(0.5, windSpeed);
+    
+    // Calm wind special case: circular spread instead of elongated plume
+    const isCalm = windSpeed < 0.5;
+    const calmFactor = isCalm ? 2.0 : 1.0; // Wider spread in calm conditions
     
     // Buoyancy rise for elevated releases (Briggs equations simplified)
     const deltaT = Math.max(0, releaseTempC - ambientTempC);
@@ -194,8 +228,8 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
       ? 2.6 * Math.pow((deltaT / ambientTempKelvin) * 1000, 0.333) * 10 / u 
       : 0;
     
-    // Effective release height (physical height + buoyancy rise)
-    const effectiveHeight = H + buoyancyRise;
+    // Effective release height (physical height + buoyancy rise), capped by mixing height
+    const effectiveHeight = Math.min(H + buoyancyRise, mixingHeight * 0.9);
     
     // Distance factor: elevated releases extend the downwind distance
     const heightDistanceFactor = effectiveHeight > 0 
@@ -216,7 +250,7 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
     
     // Combined environmental adjustment factors
     const environmentalFactor = temperatureFactor * humidityFactor * pressureFactor * 
-      terrainFactor * containmentFactor;
+      terrainFactor * containmentFactor * mixingHeightFactor * averagingTimeFactor * calmFactor;
     
     // Chemical hazard factor
     let chemicalFactor = 1.0;
