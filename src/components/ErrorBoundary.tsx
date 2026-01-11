@@ -1,7 +1,10 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Home, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+const IS_DEV = import.meta.env.DEV;
+const LAST_ERROR_KEY = 'eldsm:last_error_v1';
 
 interface Props {
   children: ReactNode;
@@ -30,9 +33,23 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
-    // Log error to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Always log (helps in prod too)
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Persist the last error for easier debugging across refreshes
+    try {
+      sessionStorage.setItem(
+        LAST_ERROR_KEY,
+        JSON.stringify({
+          message: error?.message || String(error),
+          stack: error?.stack || null,
+          componentStack: errorInfo?.componentStack || null,
+          time: Date.now(),
+        })
+      );
+    } catch {
+      // ignore storage failures
     }
   }
 
@@ -49,11 +66,47 @@ class ErrorBoundary extends Component<Props, State> {
     this.handleReset();
   };
 
+  handleCopyDetails = async (): Promise<void> => {
+    const payload = this.getErrorPayload();
+    if (!payload) return;
+
+    const text = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback: best-effort prompt
+      window.prompt('Copy error details:', text);
+    }
+  };
+
+  private getErrorPayload():
+    | { message: string; stack: string | null; componentStack: string | null; time: number }
+    | null {
+    // Prefer current error; otherwise show last stored error
+    if (this.state.error) {
+      return {
+        message: this.state.error.message || String(this.state.error),
+        stack: this.state.error.stack || null,
+        componentStack: this.state.errorInfo?.componentStack || null,
+        time: Date.now(),
+      };
+    }
+
+    try {
+      const raw = sessionStorage.getItem(LAST_ERROR_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
   render(): ReactNode {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
       }
+
+      const payload = this.getErrorPayload();
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -68,18 +121,23 @@ class ErrorBoundary extends Component<Props, State> {
               <p className="text-muted-foreground text-center">
                 An unexpected error occurred. Please try refreshing the page or go back to the home page.
               </p>
-              
-              {process.env.NODE_ENV === 'development' && this.state.error && (
+
+              {payload?.message && (
                 <details className="bg-muted p-3 rounded-lg text-sm">
-                  <summary className="cursor-pointer font-medium">Error Details</summary>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs text-destructive overflow-auto max-h-40">
-                    {this.state.error.toString()}
-                    {this.state.errorInfo?.componentStack}
+                  <summary className="cursor-pointer font-medium">
+                    Error Details{IS_DEV ? '' : ' (for debugging)'}
+                  </summary>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs text-foreground overflow-auto max-h-56">
+{payload.message}
+
+{IS_DEV && payload.stack ? payload.stack : ''}
+
+{IS_DEV && payload.componentStack ? payload.componentStack : ''}
                   </pre>
                 </details>
               )}
 
-              <div className="flex gap-3 justify-center">
+              <div className="flex flex-wrap gap-3 justify-center">
                 <Button onClick={this.handleReset} variant="outline">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Try Again
@@ -88,6 +146,12 @@ class ErrorBoundary extends Component<Props, State> {
                   <Home className="h-4 w-4 mr-2" />
                   Go Home
                 </Button>
+                {payload && (
+                  <Button onClick={this.handleCopyDetails} variant="secondary">
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Details
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -100,3 +164,4 @@ class ErrorBoundary extends Component<Props, State> {
 }
 
 export default ErrorBoundary;
+
