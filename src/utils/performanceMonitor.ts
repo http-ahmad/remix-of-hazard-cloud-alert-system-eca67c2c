@@ -3,6 +3,8 @@
  * Tracks calculation times, memory usage, and provides performance insights
  */
 
+const IS_DEV = import.meta.env.DEV;
+
 export interface PerformanceMetric {
   name: string;
   duration: number; // milliseconds
@@ -133,8 +135,10 @@ class PerformanceMonitor {
     }
 
     // Log slow operations in development
-    if (process.env.NODE_ENV === 'development' && metric.duration > 100) {
-      console.warn(`[Performance] Slow operation: ${metric.name} took ${metric.duration.toFixed(2)}ms`);
+    if (IS_DEV && metric.duration > 100) {
+      console.warn(
+        `[Performance] Slow operation: ${metric.name} took ${metric.duration.toFixed(2)}ms`
+      );
     }
   }
 
