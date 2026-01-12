@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useId } from 'react';
-import { MapContainer, TileLayer, Marker, Polygon, Popup } from 'react-leaflet';
+import { TileLayer, Marker, Polygon, Popup } from 'react-leaflet';
 import { LatLngExpression, Icon } from 'leaflet';
+import LeafletMapContainer from '@/components/LeafletMapContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -532,7 +533,8 @@ const GaussianPlumeDispersion: React.FC = () => {
       <Card>
         <CardContent className="p-0">
           <div className="h-[600px] w-full">
-            <MapContainer
+            <LeafletMapContainer
+              id={`leaflet-map-${mapInstanceId}`}
               key={mapInstanceId}
               {...({ center: [parameters.latitude, parameters.longitude] } as any)}
               zoom={12}
@@ -579,7 +581,7 @@ const GaussianPlumeDispersion: React.FC = () => {
                   </Popup>
                 </Polygon>
               ))}
-            </MapContainer>
+            </LeafletMapContainer>
           </div>
         </CardContent>
       </Card>

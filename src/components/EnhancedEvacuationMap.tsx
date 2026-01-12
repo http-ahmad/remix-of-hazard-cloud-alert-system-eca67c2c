@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useId } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Circle, Popup, useMap } from 'react-leaflet';
+import { TileLayer, Marker, Polyline, Circle, Popup, useMap } from 'react-leaflet';
 import { LatLngExpression, Icon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import LeafletMapContainer from '@/components/LeafletMapContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -277,7 +278,8 @@ const EnhancedEvacuationMap: React.FC<EnhancedEvacuationMapProps> = ({
 
       {/* Interactive Map */}
       <div className="h-96 w-full rounded-lg overflow-hidden border">
-        <MapContainer
+        <LeafletMapContainer
+          id={`leaflet-map-${mapInstanceId}`}
           key={mapInstanceId}
           {...({ center: [sourceLocation.lat, sourceLocation.lng] as LatLngExpression } as any)}
           zoom={13}
@@ -434,7 +436,7 @@ const EnhancedEvacuationMap: React.FC<EnhancedEvacuationMapProps> = ({
               </Popup>
             </Marker>
           ))}
-        </MapContainer>
+        </LeafletMapContainer>
       </div>
 
       {/* Optimal Routes Recommendation */}
