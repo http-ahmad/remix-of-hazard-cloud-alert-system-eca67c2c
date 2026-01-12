@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState, useId } from 'react';
-import { MapContainer, TileLayer, Marker, Circle, Polygon, Popup, useMap } from 'react-leaflet';
+import { TileLayer, Marker, Circle, Polygon, Popup, useMap } from 'react-leaflet';
 import { LatLngExpression, Icon, latLngBounds } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import LeafletMapContainer from '@/components/LeafletMapContainer';
 
 // Fix for default markers in react-leaflet - only run once
 if (typeof window !== 'undefined') {
@@ -325,7 +326,8 @@ const EnhancedLeakageMap: React.FC<EnhancedLeakageMapProps> = ({
   };
 
   return (
-    <MapContainer
+    <LeafletMapContainer
+      id={`leaflet-map-${mapInstanceId}`}
       key={mapInstanceId}
       {...({ center: mapCenter } as any)}
       zoom={13}
@@ -535,7 +537,7 @@ const EnhancedLeakageMap: React.FC<EnhancedLeakageMapProps> = ({
           </Popup>
         </Circle>
       ))}
-    </MapContainer>
+    </LeafletMapContainer>
   );
 };
 
