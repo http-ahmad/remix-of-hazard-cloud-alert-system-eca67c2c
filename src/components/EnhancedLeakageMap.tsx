@@ -1,15 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useId } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, Polygon, Popup, useMap } from 'react-leaflet';
 import { LatLngExpression, Icon, latLngBounds } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Fix for default markers in react-leaflet
-delete (Icon.Default.prototype as any)._getIconUrl;
-Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// Fix for default markers in react-leaflet - only run once
+if (typeof window !== 'undefined') {
+  delete (Icon.Default.prototype as any)._getIconUrl;
+  Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  });
+}
 
 interface Source {
   id: string;
@@ -80,6 +82,9 @@ const EnhancedLeakageMap: React.FC<EnhancedLeakageMapProps> = ({
   ambientTemperature,
   releaseTemperature,
 }) => {
+  // Generate stable unique ID for this component instance
+  const mapInstanceId = useId();
+  
   const mapCenter = useMemo<LatLngExpression>(() => [sourceLocation.lat, sourceLocation.lng], [
     sourceLocation.lat,
     sourceLocation.lng,
@@ -321,6 +326,7 @@ const EnhancedLeakageMap: React.FC<EnhancedLeakageMapProps> = ({
 
   return (
     <MapContainer
+      key={mapInstanceId}
       {...({ center: mapCenter } as any)}
       zoom={13}
       style={{ height: '100%', width: '100%' }}

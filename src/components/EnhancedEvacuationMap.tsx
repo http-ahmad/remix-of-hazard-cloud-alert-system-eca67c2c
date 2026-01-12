@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useId } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Circle, Popup, useMap } from 'react-leaflet';
 import { LatLngExpression, Icon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -18,13 +18,15 @@ import {
   Home
 } from 'lucide-react';
 
-// Fix for default markers in react-leaflet
-delete (Icon.Default.prototype as any)._getIconUrl;
-Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// Fix for default markers in react-leaflet - only run once
+if (typeof window !== 'undefined') {
+  delete (Icon.Default.prototype as any)._getIconUrl;
+  Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  });
+}
 
 interface EvacuationRoute {
   id: string;
@@ -97,6 +99,8 @@ const EnhancedEvacuationMap: React.FC<EnhancedEvacuationMapProps> = ({
   onRouteSelect,
   onShelterSelect
 }) => {
+  // Generate stable unique ID for this component instance
+  const mapInstanceId = useId();
   const [routes] = useState<EvacuationRoute[]>([
     {
       id: '1',
@@ -274,6 +278,7 @@ const EnhancedEvacuationMap: React.FC<EnhancedEvacuationMapProps> = ({
       {/* Interactive Map */}
       <div className="h-96 w-full rounded-lg overflow-hidden border">
         <MapContainer
+          key={mapInstanceId}
           {...({ center: [sourceLocation.lat, sourceLocation.lng] as LatLngExpression } as any)}
           zoom={13}
           style={{ height: '100%', width: '100%' }}

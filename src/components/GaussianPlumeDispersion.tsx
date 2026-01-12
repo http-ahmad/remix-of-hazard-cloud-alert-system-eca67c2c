@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { MapContainer, TileLayer, Marker, Polygon, Popup } from 'react-leaflet';
 import { LatLngExpression, Icon } from 'leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,13 +8,15 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import 'leaflet/dist/leaflet.css';
 
-// Fix for default markers in react-leaflet
-delete (Icon.Default.prototype as any)._getIconUrl;
-Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// Fix for default markers in react-leaflet - only run once
+if (typeof window !== 'undefined') {
+  delete (Icon.Default.prototype as any)._getIconUrl;
+  Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  });
+}
 
 interface PlumeParameters {
   latitude: number;
@@ -42,6 +44,9 @@ interface ConcentrationZone {
 }
 
 const GaussianPlumeDispersion: React.FC = () => {
+  // Generate stable unique ID for this component instance
+  const mapInstanceId = useId();
+  
   const [parameters, setParameters] = useState<PlumeParameters>({
     latitude: 40.7128,
     longitude: -74.0060,
@@ -528,6 +533,7 @@ const GaussianPlumeDispersion: React.FC = () => {
         <CardContent className="p-0">
           <div className="h-[600px] w-full">
             <MapContainer
+              key={mapInstanceId}
               {...({ center: [parameters.latitude, parameters.longitude] } as any)}
               zoom={12}
               style={{ height: '100%', width: '100%' }}
