@@ -534,9 +534,8 @@ const GaussianPlumeDispersion: React.FC = () => {
         <CardContent className="p-0">
           <div className="h-[600px] w-full">
             <LeafletMapContainer
-              id={`leaflet-map-${mapInstanceId}`}
-              key={mapInstanceId}
-              {...({ center: [parameters.latitude, parameters.longitude] } as any)}
+              id={`gaussian-map-${mapInstanceId}`}
+              center={[parameters.latitude, parameters.longitude] as any}
               zoom={12}
               style={{ height: '100%', width: '100%' }}
               className="rounded-lg"

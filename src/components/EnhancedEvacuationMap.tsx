@@ -279,9 +279,8 @@ const EnhancedEvacuationMap: React.FC<EnhancedEvacuationMapProps> = ({
       {/* Interactive Map */}
       <div className="h-96 w-full rounded-lg overflow-hidden border">
         <LeafletMapContainer
-          id={`leaflet-map-${mapInstanceId}`}
-          key={mapInstanceId}
-          {...({ center: [sourceLocation.lat, sourceLocation.lng] as LatLngExpression } as any)}
+          id={`evac-map-${mapInstanceId}`}
+          center={[sourceLocation.lat, sourceLocation.lng] as any}
           zoom={13}
           style={{ height: '100%', width: '100%' }}
         >
