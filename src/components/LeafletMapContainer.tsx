@@ -1,53 +1,94 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { MapContainer } from 'react-leaflet';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { LeafletProvider, createLeafletContext } from '@react-leaflet/core';
+import { Map as LeafletMap, type MapOptions, type LatLngExpression, type LatLngBoundsExpression, type FitBoundsOptions } from 'leaflet';
 
 /**
- * Robust Leaflet map wrapper that prevents "Map container is already initialized"
- * and "Map container is being reused" errors.
+ * Why this exists
+ * react-leaflet's MapContainer creates the Leaflet map inside a ref callback.
+ * In React 18 (tabs/offscreen/suspense), the same DOM node can get reused and
+ * still carry Leaflet's internal `_leaflet_id`, causing:
+ *   "Map container is already initialized."
+ *
+ * Fix
+ * We implement a tiny "safe" MapContainer equivalent that ALWAYS clears
+ * `node._leaflet_id` *right before* instantiating LeafletMap.
  */
-type LeafletMapContainerProps = {
+export type LeafletMapContainerProps = {
   id: string;
+  className?: string;
+  style?: React.CSSProperties;
+  placeholder?: React.ReactNode;
+  whenReady?: () => void;
+  center?: LatLngExpression;
+  zoom?: number;
+  bounds?: LatLngBoundsExpression;
+  boundsOptions?: FitBoundsOptions;
   children?: React.ReactNode;
-} & Record<string, any>;
+} & Omit<MapOptions, 'center' | 'zoom' | 'crs'>;
 
-const LeafletMapContainer: React.FC<LeafletMapContainerProps> = ({ id, children, style, className, ...mapProps }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [uniqueKey, setUniqueKey] = useState(() => `${id}-${Date.now()}`);
-  const mountedRef = useRef(true);
+const LeafletMapContainer = forwardRef<LeafletMap | null, LeafletMapContainerProps>(
+  ({ id, className, style, placeholder, whenReady, center, zoom, bounds, boundsOptions, children, ...options }, forwardedRef) => {
+    const [context, setContext] = useState<ReturnType<typeof createLeafletContext> | null>(null);
+    const mapInstanceRef = useRef<LeafletMap | null>(null);
 
-  const cleanupContainer = useCallback((el: HTMLElement | null) => {
-    if (!el) return;
-    if ((el as any)._leaflet_id !== undefined) {
-      try { delete (el as any)._leaflet_id; } catch { (el as any)._leaflet_id = undefined; }
-    }
-  }, []);
+    useImperativeHandle(forwardedRef, () => mapInstanceRef.current, []);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    setUniqueKey(`${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    if (containerRef.current) cleanupContainer(containerRef.current);
-    const timer = setTimeout(() => { if (mountedRef.current) setIsReady(true); }, 100);
-    return () => { mountedRef.current = false; clearTimeout(timer); setIsReady(false); if (containerRef.current) cleanupContainer(containerRef.current); };
-  }, [id, cleanupContainer]);
+    const mapRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        if (!node || mapInstanceRef.current) return;
 
-  if (!isReady) {
+        // Critical: clear Leaflet's internal marker so reuse never crashes.
+        const anyNode = node as any;
+        if (anyNode._leaflet_id != null) {
+          try {
+            delete anyNode._leaflet_id;
+          } catch {
+            anyNode._leaflet_id = undefined;
+          }
+        }
+
+        const map = new LeafletMap(node, options as any);
+        mapInstanceRef.current = map;
+
+        if (center != null && zoom != null) {
+          map.setView(center, zoom);
+        } else if (bounds != null) {
+          map.fitBounds(bounds, boundsOptions);
+        }
+
+        if (whenReady) {
+          map.whenReady(whenReady);
+        }
+
+        setContext(createLeafletContext(map));
+      },
+      // Intentionally empty deps to match react-leaflet behavior
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      []
+    );
+
+    useEffect(() => {
+      return () => {
+        const map = mapInstanceRef.current;
+        mapInstanceRef.current = null;
+        if (map) {
+          try {
+            map.remove();
+          } catch {
+            // ignore
+          }
+        }
+      };
+    }, []);
+
     return (
-      <div ref={containerRef} id={id} style={{ height: '100%', width: '100%', ...style }} className={className}>
-        <div className="flex items-center justify-center h-full w-full bg-muted/20 animate-pulse">
-          <span className="text-muted-foreground text-sm">Loading map...</span>
-        </div>
+      <div id={id} className={className} style={style} ref={mapRef}>
+        {context ? <LeafletProvider value={context}>{children}</LeafletProvider> : (placeholder ?? null)}
       </div>
     );
   }
+);
 
-  return (
-    <div ref={containerRef} id={id} style={{ height: '100%', width: '100%' }}>
-      <MapContainer key={uniqueKey} {...(mapProps as any)} style={{ height: '100%', width: '100%', ...style }} className={className}>
-        {children}
-      </MapContainer>
-    </div>
-  );
-};
+LeafletMapContainer.displayName = 'LeafletMapContainer';
 
 export default LeafletMapContainer;
