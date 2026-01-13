@@ -1,39 +1,52 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { MapContainer } from 'react-leaflet';
 
 /**
- * Leaflet (and therefore react-leaflet) throws "Map container is already initialized"
- * when the same DOM element keeps a leftover `_leaflet_id` between remounts.
- *
- * This wrapper clears that flag *before* MapContainer's internal effect runs,
- * making the app resilient after error-boundary resets / fast remounts.
+ * Robust Leaflet map wrapper that prevents "Map container is already initialized"
+ * and "Map container is being reused" errors.
  */
 type LeafletMapContainerProps = {
   id: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 } & Record<string, any>;
 
-const LeafletMapContainer: React.FC<LeafletMapContainerProps> = ({ id, children, ...rest }) => {
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return;
+const LeafletMapContainer: React.FC<LeafletMapContainerProps> = ({ id, children, style, className, ...mapProps }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isReady, setIsReady] = useState(false);
+  const [uniqueKey, setUniqueKey] = useState(() => `${id}-${Date.now()}`);
+  const mountedRef = useRef(true);
 
-    const el = document.getElementById(id) as any;
+  const cleanupContainer = useCallback((el: HTMLElement | null) => {
     if (!el) return;
-
-    // If a previous Leaflet instance crashed before proper cleanup, `_leaflet_id` can persist.
-    if (el._leaflet_id) {
-      try {
-        delete el._leaflet_id;
-      } catch {
-        el._leaflet_id = undefined;
-      }
+    if ((el as any)._leaflet_id !== undefined) {
+      try { delete (el as any)._leaflet_id; } catch { (el as any)._leaflet_id = undefined; }
     }
-  }, [id]);
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    setUniqueKey(`${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    if (containerRef.current) cleanupContainer(containerRef.current);
+    const timer = setTimeout(() => { if (mountedRef.current) setIsReady(true); }, 100);
+    return () => { mountedRef.current = false; clearTimeout(timer); setIsReady(false); if (containerRef.current) cleanupContainer(containerRef.current); };
+  }, [id, cleanupContainer]);
+
+  if (!isReady) {
+    return (
+      <div ref={containerRef} id={id} style={{ height: '100%', width: '100%', ...style }} className={className}>
+        <div className="flex items-center justify-center h-full w-full bg-muted/20 animate-pulse">
+          <span className="text-muted-foreground text-sm">Loading map...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <MapContainer {...(rest as any)} {...({ id } as any)}>
-      {children}
-    </MapContainer>
+    <div ref={containerRef} id={id} style={{ height: '100%', width: '100%' }}>
+      <MapContainer key={uniqueKey} {...(mapProps as any)} style={{ height: '100%', width: '100%', ...style }} className={className}>
+        {children}
+      </MapContainer>
+    </div>
   );
 };
 

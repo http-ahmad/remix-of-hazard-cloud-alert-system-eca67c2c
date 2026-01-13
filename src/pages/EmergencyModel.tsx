@@ -48,6 +48,9 @@ const EvacuationRoutes = lazy(() => import("@/components/EvacuationRoutes"));
 const ResourceManagement = lazy(() => import("@/components/ResourceManagement"));
 const WeatherDataDisplay = lazy(() => import("@/components/WeatherDataDisplay"));
 
+/** Source type for gas release modeling */
+type SourceType = 'point' | 'line' | 'area' | 'jet';
+
 interface ModelParameters {
   sourceLocation: { lat: number; lng: number };
   releaseRate: number;
@@ -71,6 +74,16 @@ interface ModelParameters {
   mixingHeight: number;
   /** Averaging time (minutes) - typically 10 for ALOHA */
   averagingTime: number;
+  /** Source type: point, line, area, or jet */
+  sourceType: SourceType;
+  /** Line source length (m) - for line sources */
+  lineLength?: number;
+  /** Area source dimensions (m²) - for area sources */
+  areaSize?: number;
+  /** Jet exit velocity (m/s) - for jet/momentum sources */
+  jetVelocity?: number;
+  /** Jet exit diameter (m) - for jet sources */
+  jetDiameter?: number;
 }
 
 
@@ -129,7 +142,7 @@ const sourceIcon = createCustomIcon('#ef4444');
 const sensorIcon = createCustomIcon('#3b82f6');
 
 const EmergencyModel = () => {
-  const [modelParams, setModelParams] = useState<ModelParameters>({
+const [modelParams, setModelParams] = useState<ModelParameters>({
     sourceLocation: { lat: 40.7128, lng: -74.0060 },
     releaseRate: 10.0,
     windSpeed: 5.0,
@@ -146,6 +159,11 @@ const EmergencyModel = () => {
     terrainType: 'suburban',
     mixingHeight: 1000,
     averagingTime: 10,
+    sourceType: 'point',
+    lineLength: 100,
+    areaSize: 100,
+    jetVelocity: 50,
+    jetDiameter: 0.1,
   });
 
 
@@ -776,6 +794,116 @@ const EmergencyModel = () => {
                               }}
                             />
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Source Type Configuration */}
+                      <div className="space-y-3 p-3 border rounded-lg mt-4">
+                        <h4 className="font-semibold flex items-center gap-2">
+                          <Target className="h-4 w-4" />
+                          Source Type Configuration
+                        </h4>
+                        <div className="space-y-3">
+                          <div>
+                            <Label>Source Type</Label>
+                            <Select 
+                              value={modelParams.sourceType} 
+                              onValueChange={(value: SourceType) => setModelParams({ ...modelParams, sourceType: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="point">Point Source (Stack/Vent)</SelectItem>
+                                <SelectItem value="line">Line Source (Pipeline/Rupture)</SelectItem>
+                                <SelectItem value="area">Area Source (Pool Evaporation)</SelectItem>
+                                <SelectItem value="jet">Jet/Momentum Source (High-Pressure Release)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Line Source Parameters */}
+                          {modelParams.sourceType === 'line' && (
+                            <div className="p-2 bg-muted/30 rounded-lg space-y-2">
+                              <Label className="text-xs text-muted-foreground">Line Source Parameters</Label>
+                              <div>
+                                <Label>Line Length (m)</Label>
+                                <Input
+                                  type="number"
+                                  step="10"
+                                  min="1"
+                                  value={modelParams.lineLength ?? 100}
+                                  onChange={(e) => {
+                                    const num = parseFloat(e.target.value);
+                                    if (!isNaN(num) && num >= 0) {
+                                      setModelParams({ ...modelParams, lineLength: num });
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Area Source Parameters */}
+                          {modelParams.sourceType === 'area' && (
+                            <div className="p-2 bg-muted/30 rounded-lg space-y-2">
+                              <Label className="text-xs text-muted-foreground">Area Source Parameters</Label>
+                              <div>
+                                <Label>Area Size (m²)</Label>
+                                <Input
+                                  type="number"
+                                  step="10"
+                                  min="1"
+                                  value={modelParams.areaSize ?? 100}
+                                  onChange={(e) => {
+                                    const num = parseFloat(e.target.value);
+                                    if (!isNaN(num) && num >= 0) {
+                                      setModelParams({ ...modelParams, areaSize: num });
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Jet Source Parameters */}
+                          {modelParams.sourceType === 'jet' && (
+                            <div className="p-2 bg-muted/30 rounded-lg space-y-2">
+                              <Label className="text-xs text-muted-foreground">Jet/Momentum Parameters</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <Label>Exit Velocity (m/s)</Label>
+                                  <Input
+                                    type="number"
+                                    step="5"
+                                    min="1"
+                                    value={modelParams.jetVelocity ?? 50}
+                                    onChange={(e) => {
+                                      const num = parseFloat(e.target.value);
+                                      if (!isNaN(num) && num >= 0) {
+                                        setModelParams({ ...modelParams, jetVelocity: num });
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <Label>Exit Diameter (m)</Label>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    value={modelParams.jetDiameter ?? 0.1}
+                                    onChange={(e) => {
+                                      const num = parseFloat(e.target.value);
+                                      if (!isNaN(num) && num > 0) {
+                                        setModelParams({ ...modelParams, jetDiameter: num });
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 

@@ -327,9 +327,8 @@ const EnhancedLeakageMap: React.FC<EnhancedLeakageMapProps> = ({
 
   return (
     <LeafletMapContainer
-      id={`leaflet-map-${mapInstanceId}`}
-      key={mapInstanceId}
-      {...({ center: mapCenter } as any)}
+      id={`leakage-map-${mapInstanceId}`}
+      center={mapCenter as any}
       zoom={13}
       style={{ height: '100%', width: '100%' }}
       className="rounded-lg"

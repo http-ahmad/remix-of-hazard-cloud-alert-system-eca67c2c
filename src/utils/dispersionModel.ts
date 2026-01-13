@@ -19,6 +19,9 @@ import {
   calculateHazardZones,
 } from '@/utils/gaussianPlume';
 
+/** Source type for gas release modeling */
+type SourceType = 'point' | 'line' | 'area' | 'jet';
+
 interface ModelParameters {
   chemicalType: string;
   releaseRate: number;
@@ -47,6 +50,16 @@ interface ModelParameters {
   mixingHeight?: number;
   /** Averaging time (minutes) - typically 10 for ALOHA */
   averagingTime?: number;
+  /** Source type: point, line, area, or jet */
+  sourceType?: SourceType;
+  /** Line source length (m) - for line sources */
+  lineLength?: number;
+  /** Area source dimensions (m²) - for area sources */
+  areaSize?: number;
+  /** Jet exit velocity (m/s) - for jet/momentum sources */
+  jetVelocity?: number;
+  /** Jet exit diameter (m) - for jet sources */
+  jetDiameter?: number;
 }
 
 
@@ -248,9 +261,41 @@ export const calculateDispersion = (params: ModelParameters): ZoneData => {
     // Wind effect - proper atmospheric dispersion relationship
     const windFactor = Math.pow(u, -0.8);
     
+    // Source type factor - different geometries affect dispersion patterns
+    let sourceTypeFactor = 1.0;
+    const sourceType = params.sourceType || 'point';
+    
+    switch (sourceType) {
+      case 'point':
+        // Standard point source - no adjustment
+        sourceTypeFactor = 1.0;
+        break;
+      case 'line':
+        // Line source (pipeline/rupture) - wider lateral spread
+        const lineLength = safeParseNumber(params.lineLength, { fallback: 100, min: 1 });
+        // Longer lines = wider initial spread = faster dilution but larger affected area
+        sourceTypeFactor = 1.0 + Math.log10(lineLength / 10) * 0.3;
+        break;
+      case 'area':
+        // Area source (pool evaporation) - distributed release
+        const areaSize = safeParseNumber(params.areaSize, { fallback: 100, min: 1 });
+        // Larger areas = lower peak concentration but wider affected zone
+        sourceTypeFactor = 0.8 + Math.sqrt(areaSize / 100) * 0.4;
+        break;
+      case 'jet':
+        // Jet/momentum source - high-pressure release with initial momentum
+        const jetVelocity = safeParseNumber(params.jetVelocity, { fallback: 50, min: 1 });
+        const jetDiameter = safeParseNumber(params.jetDiameter, { fallback: 0.1, min: 0.01 });
+        // Higher velocity = more momentum = extended downwind distance
+        // Jet entrainment increases dilution but extends reach
+        const momentumFactor = Math.sqrt(jetVelocity / 10) * Math.sqrt(jetDiameter * 10);
+        sourceTypeFactor = 1.2 + momentumFactor * 0.3;
+        break;
+    }
+    
     // Combined environmental adjustment factors
     const environmentalFactor = temperatureFactor * humidityFactor * pressureFactor * 
-      terrainFactor * containmentFactor * mixingHeightFactor * averagingTimeFactor * calmFactor;
+      terrainFactor * containmentFactor * mixingHeightFactor * averagingTimeFactor * calmFactor * sourceTypeFactor;
     
     // Chemical hazard factor
     let chemicalFactor = 1.0;
